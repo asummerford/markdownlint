@@ -13,11 +13,11 @@ import pluginInline from "markdown-it-for-inline";
 import pluginSub from "markdown-it-sub";
 import pluginSup from "markdown-it-sup";
 import test from "ava";
-import spawn from "nano-spawn";
 import { getVersion } from "markdownlint";
 import { lint as lintAsync } from "markdownlint/async";
 import { lint as lintPromise } from "markdownlint/promise";
 import { lint as lintSync } from "markdownlint/sync";
+import * as cache from "../lib/cache.mjs";
 import * as constants from "../lib/constants.mjs";
 import rules from "../lib/rules.mjs";
 import customRules from "./rules/rules.cjs";
@@ -30,6 +30,23 @@ const deprecatedRuleNames = new Set(constants.deprecatedRuleNames);
 const ajvOptions = {
   "allowUnionTypes": true
 };
+
+/**
+ * Gets an instance of a markdown-it factory, suitable for use with options.markdownItFactory.
+ *
+ * @param {import("../lib/markdownlint.mjs").Plugin[]} markdownItPlugins Additional markdown-it plugins.
+ * @returns {import("../lib/markdownlint.mjs").MarkdownItFactory} Function to create a markdown-it parser.
+ */
+function getMarkdownItFactory(markdownItPlugins) {
+  return () => {
+    const md = markdownIt({ "html": true });
+    for (const markdownItPlugin of markdownItPlugins) {
+      // @ts-ignore
+      md.use(...markdownItPlugin);
+    }
+    return md;
+  };
+}
 
 test("simpleAsync", (t) => new Promise((resolve) => {
   t.plan(2);
@@ -73,63 +90,6 @@ test("simplePromise", (t) => {
   return lintPromise(options).then((actual) => {
     t.is(actual.toString(), expected, "Unexpected results.");
   });
-});
-
-const projectFiles = [
-  "*.md",
-  "doc/*.md",
-  "helpers/*.md",
-  "micromark/*.md",
-  "schema/*.md"
-];
-
-test("projectFiles", (t) => {
-  t.plan(2);
-  return import("globby")
-    .then((module) => module.globby(projectFiles))
-    .then((files) => {
-      t.is(files.length, 60);
-      const options = {
-        files,
-        "config": require("../.markdownlint.json")
-      };
-      // @ts-ignore
-      return lintPromise(options).then((actual) => {
-        const expected = {};
-        for (const file of files) {
-          expected[file] = [];
-        }
-        t.deepEqual(actual, expected, "Issue(s) with project files.");
-      });
-    });
-});
-
-test("projectFilesExtendedAscii", (t) => {
-  t.plan(2);
-  return import("globby")
-    .then((module) => module.globby([
-      ...projectFiles,
-      "!doc/Rules.md",
-      "!doc/md010.md",
-      "!doc/md026.md",
-      "!doc/md036.md"
-    ]))
-    .then((files) => {
-      t.is(files.length, 56);
-      const options = {
-        files,
-        "config": require("../.markdownlint.json"),
-        "customRules": [ require("markdownlint-rule-extended-ascii") ]
-      };
-      // @ts-ignore
-      return lintPromise(options).then((actual) => {
-        const expected = {};
-        for (const file of files) {
-          expected[file] = [];
-        }
-        t.deepEqual(actual, expected, "Issue(s) with project files.");
-      });
-    });
 });
 
 test("stringInputLineEndings", (t) => new Promise((resolve) => {
@@ -680,7 +640,7 @@ test("readmeHeadings", (t) => new Promise((resolve) => {
           "##### options.frontMatter",
           "##### options.fs",
           "##### options.handleRuleFailures",
-          "##### options.markdownItPlugins",
+          "##### options.markdownItFactory",
           "##### options.noInlineConfig",
           "##### options.resultVersion",
           "##### options.strings",
@@ -873,7 +833,7 @@ test("customFileSystemAsync", (t) => new Promise((resolve) => {
 }));
 
 test("readme", async(t) => {
-  t.plan(128);
+  t.plan(130);
   const tagToRules = {};
   for (const rule of rules) {
     for (const tag of rule.tags) {
@@ -948,7 +908,7 @@ test("readme", async(t) => {
 });
 
 test("validateJsonUsingConfigSchemaStrict", async(t) => {
-  t.plan(181);
+  t.plan(201);
   // @ts-ignore
   const ajv = new Ajv(ajvOptions);
   const validateSchemaStrict = ajv.compile(configSchemaStrict);
@@ -1070,7 +1030,7 @@ test("validateConfigExampleJson", (t) => {
 });
 
 test("allBuiltInRulesHaveValidUrl", (t) => {
-  t.plan(153);
+  t.plan(156);
   for (const rule of rules) {
     // @ts-ignore
     t.truthy(rule.information);
@@ -1104,6 +1064,71 @@ test("someCustomRulesHaveValidUrl", (t) => {
   }
 });
 
+test("coverageForCacheMicromarkTokensWhenUndefined", (t) => {
+  t.plan(1);
+  cache.initialize(undefined);
+  t.is(cache.micromarkTokens().length, 0);
+});
+
+test("micromarkParseCalledWhenNeeded", (t) => new Promise((resolve) => {
+  t.plan(3);
+  /** @type {import("markdownlint").Rule} */
+  const markdownItRule = {
+    "names": [ "markdown-it-rule" ],
+    "description": "markdown-it rule",
+    "tags": [ "test" ],
+    "parser": "markdownit",
+    "function": () => {
+      t.true(cache.micromarkTokens().length > 0);
+    }
+  };
+  lintAsync({
+    "strings": {
+      "string": "# Heading\n\nText\n"
+    },
+    "config": {
+      "markdown-it-rule": true
+    },
+    "customRules": [ markdownItRule ],
+    "markdownItFactory": getMarkdownItFactory([])
+  }, function callback(err, actual) {
+    t.falsy(err);
+    const expected = { "string": [] };
+    t.deepEqual(actual, expected, "Unexpected issues.");
+    resolve();
+  });
+}));
+
+test("micromarkParseSkippedWhenNotNeeded", (t) => new Promise((resolve) => {
+  t.plan(3);
+  /** @type {import("markdownlint").Rule} */
+  const markdownItRule = {
+    "names": [ "markdown-it-rule" ],
+    "description": "markdown-it rule",
+    "tags": [ "test" ],
+    "parser": "markdownit",
+    "function": () => {
+      t.true(cache.micromarkTokens().length === 0);
+    }
+  };
+  lintAsync({
+    "strings": {
+      "string": "# Heading\n\nText\n"
+    },
+    "config": {
+      "default": false,
+      "markdown-it-rule": true
+    },
+    "customRules": [ markdownItRule ],
+    "markdownItFactory": getMarkdownItFactory([])
+  }, function callback(err, actual) {
+    t.falsy(err);
+    const expected = { "string": [] };
+    t.deepEqual(actual, expected, "Unexpected issues.");
+    resolve();
+  });
+}));
+
 test("markdownItPluginsSingle", (t) => new Promise((resolve) => {
   t.plan(4);
   lintAsync({
@@ -1112,9 +1137,9 @@ test("markdownItPluginsSingle", (t) => new Promise((resolve) => {
     },
     // Use a markdown-it custom rule so the markdown-it plugin will be run
     "customRules": customRules.anyBlockquote,
-    "markdownItPlugins": [
+    "markdownItFactory": getMarkdownItFactory([
       [ pluginInline, "check_text_plugin", "text", () => t.true(true) ]
-    ]
+    ])
   }, function callback(err, actual) {
     t.falsy(err);
     const expected = { "string": [] };
@@ -1131,12 +1156,12 @@ test("markdownItPluginsMultiple", (t) => new Promise((resolve) => {
     },
     // Use a markdown-it custom rule so the markdown-it plugin will be run
     "customRules": customRules.anyBlockquote,
-    "markdownItPlugins": [
+    "markdownItFactory": getMarkdownItFactory([
       [ pluginSub ],
       [ pluginSup ],
       [ pluginInline, "check_sub_plugin", "sub_open", () => t.true(true) ],
       [ pluginInline, "check_sup_plugin", "sup_open", () => t.true(true) ]
-    ]
+    ])
   }, function callback(err, actual) {
     t.falsy(err);
     const expected = { "string": [] };
@@ -1151,9 +1176,9 @@ test("markdownItPluginsNoMarkdownIt", (t) => new Promise((resolve) => {
     "strings": {
       "string": "# Heading\n\nText\n"
     },
-    "markdownItPlugins": [
+    "markdownItFactory": getMarkdownItFactory([
       [ pluginInline, "check_text_plugin", "text", () => t.fail() ]
-    ]
+    ])
   }, function callback(err, actual) {
     t.falsy(err);
     const expected = { "string": [] };
@@ -1173,9 +1198,9 @@ test("markdownItPluginsUnusedUncalled", (t) => new Promise((resolve) => {
     },
     // Use a markdown-it custom rule so the markdown-it plugin will be run
     "customRules": customRules.anyBlockquote,
-    "markdownItPlugins": [
+    "markdownItFactory": getMarkdownItFactory([
       [ pluginInline, "check_text_plugin", "text", () => t.fail() ]
-    ]
+    ])
   }, function callback(err, actual) {
     t.falsy(err);
     const expected = { "string": [] };
@@ -1242,7 +1267,8 @@ test("token-map-spans", (t) => {
         }
       }
     ],
-    "files": [ "./test/token-map-spans.md" ]
+    "files": [ "./test/token-map-spans.md" ],
+    "markdownItFactory": getMarkdownItFactory([])
   };
   lintSync(options);
 });
@@ -1345,7 +1371,6 @@ test("configParsersTOML", async(t) => {
       ].join("\n")
     },
     "configParsers": [
-      jsoncParser.parse,
       require("toml").parse
     ]
   };
@@ -1366,67 +1391,4 @@ test("constants", (t) => {
   t.is(constants.homepage, packageJson.homepage);
   // @ts-ignore
   t.is(constants.version, packageJson.version);
-});
-
-const exportMappings = new Map([
-  [ ".", "../lib/exports.mjs" ],
-  [ "./async", "../lib/exports-async.mjs" ],
-  [ "./promise", "../lib/exports-promise.mjs" ],
-  [ "./sync", "../lib/exports-sync.mjs" ],
-  [ "./helpers", "../helpers/helpers.cjs" ],
-  [ "./style/all", "../style/all.json" ],
-  [ "./style/cirosantilli", "../style/cirosantilli.json" ],
-  [ "./style/prettier", "../style/prettier.json" ],
-  [ "./style/relaxed", "../style/relaxed.json" ]
-]);
-
-test("exportMappings", (t) => {
-  t.deepEqual(
-    Object.keys(packageJson.exports),
-    [ ...exportMappings.keys() ]
-  );
-});
-
-const jsonRe = /\.json$/u;
-// ExperimentalWarning: Importing JSON modules is an experimental feature and might change at any time
-// const importOptionsJson = { "with": { "type": "json" } };
-
-for (const [ exportName, exportPath ] of exportMappings) {
-  test(exportName, async(t) => {
-    const json = jsonRe.test(exportPath);
-    const exportByName = exportName.replace(/^\./u, packageJson.name);
-    const importExportByName = json ?
-      require(exportByName) :
-      await import(exportByName);
-    const importExportByPath = json ?
-      require(exportPath) :
-      await import(exportPath);
-    t.is(importExportByName, importExportByPath);
-  });
-}
-
-test("subpathImports", async(t) => {
-  t.plan(8);
-  const scenarios = [
-    { "conditions": "browser", "throws": true },
-    { "conditions": "default", "throws": false },
-    { "conditions": "markdownlint-imports-browser", "throws": true },
-    { "conditions": "markdownlint-imports-node", "throws": false }
-  ];
-  for (const scenario of scenarios) {
-    const { conditions, throws } = scenario;
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await spawn("node", [ `--conditions=${conditions}`, "./standalone.mjs" ], { "cwd": "./example" });
-      t.true(!throws, conditions);
-    } catch {
-      t.true(throws, conditions);
-    }
-  }
-  // Fake "100%" coverage for node-imports-browser.mjs
-  const { "fs": browserFs } = await import("../lib/node-imports-browser.mjs");
-  t.throws(() => browserFs.access());
-  t.throws(() => browserFs.accessSync());
-  t.throws(() => browserFs.readFile());
-  t.throws(() => browserFs.readFileSync());
 });

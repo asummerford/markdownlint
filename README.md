@@ -24,7 +24,7 @@ for Markdown files. It was inspired by - and heavily influenced by - Mark
 Harrison's [markdownlint][markdownlint-ruby] for Ruby. The initial rules, rule
 documentation, and test cases came from that project.
 
-`markdownlint` uses the [`micromark`][micromark] parser and honors the
+`markdownlint` uses the [`micromark` parser][micromark] and honors the
 [CommonMark][commonmark] specification for Markdown. It additionally supports
 popular [GitHub Flavored Markdown (GFM)][gfm] syntax like autolinks and tables
 as well as directives, footnotes, and math syntax - all implemented by
@@ -55,6 +55,7 @@ as well as directives, footnotes, and math syntax - all implemented by
   - [vscode-markdownlint extension for VS Code][vscode-markdownlint]
   - [Sublime Text markdownlint for Sublime Text][sublimelinter]
   - [coc-markdownlint extension for Vim/Neovim][coc]
+  - [flymake-markdownlint-cli2 extension for Emacs][emacs-flymake]
 - Tooling
   - [eslint-plugin-markdownlint for the ESLint analyzer][eslint-plugin]
   - [grunt-markdownlint for the Grunt task runner][grunt-markdownlint]
@@ -65,6 +66,7 @@ as well as directives, footnotes, and math syntax - all implemented by
 
 [cake]: https://github.com/cake-contrib/Cake.Markdownlint
 [coc]: https://github.com/fannheyward/coc-markdownlint
+[emacs-flymake]: https://github.com/ewilderj/flymake-markdownlint-cli2
 [eslint-plugin]: https://github.com/paweldrozd/eslint-plugin-markdownlint
 [grunt-markdownlint]: https://github.com/sagiegurari/grunt-markdownlint
 [markdownlint-cli]: https://github.com/igorshubovych/markdownlint-cli
@@ -146,6 +148,7 @@ playground for learning and exploring.
 - **[MD055](doc/md055.md)** *table-pipe-style* - Table pipe style
 - **[MD056](doc/md056.md)** *table-column-count* - Table column count
 - **[MD058](doc/md058.md)** *blanks-around-tables* - Tables should be surrounded by blank lines
+- **[MD059](doc/md059.md)** *descriptive-link-text* - Link text should be descriptive
 
 <!-- markdownlint-restore -->
 
@@ -165,7 +168,7 @@ To implement your own rules, refer to [CustomRules.md](doc/CustomRules.md).
 Tags group related rules and can be used to enable/disable multiple
 rules at once.
 
-- **`accessibility`** - `MD045`
+- **`accessibility`** - `MD045`, `MD059`
 - **`atx`** - `MD018`, `MD019`
 - **`atx_closed`** - `MD020`, `MD021`
 - **`blank_lines`** - `MD012`, `MD022`, `MD031`, `MD032`, `MD047`
@@ -183,7 +186,7 @@ rules at once.
 - **`language`** - `MD040`
 - **`line_length`** - `MD013`
 - **`links`** - `MD011`, `MD034`, `MD039`, `MD042`, `MD051`, `MD052`, `MD053`,
-  `MD054`
+  `MD054`, `MD059`
 - **`ol`** - `MD029`, `MD030`, `MD032`
 - **`spaces`** - `MD018`, `MD019`, `MD020`, `MD021`, `MD023`
 - **`spelling`** - `MD044`
@@ -418,9 +421,9 @@ object.
 See [ValidatingConfiguration.md](schema/ValidatingConfiguration.md) for ways to
 use the JSON Schema to validate configuration.
 
-For more advanced scenarios, styles can reference and extend other styles.
-The `readConfig` and `readConfigSync` functions can be used to read such
-styles.
+For more advanced scenarios, styles can reference and build upon other styles
+via the `extends` keyword and a file path or (installed) package name. The
+`readConfig` function can be used to read such aggregate styles from code.
 
 For example, assuming a `base.json` configuration file:
 
@@ -567,28 +570,43 @@ This setting can be useful in the presence of (custom) rules that encounter
 unexpected syntax and fail. By enabling this option, the linting process
 is allowed to continue and report any violations that were found.
 
-##### options.markdownItPlugins
+##### options.markdownItFactory
 
-Type: `Array` of `Array` of `Function` and plugin parameters
+Type: `Function` returning an instance of a [`markdown-it` parser][markdown-it]
 
-Specifies additional [`markdown-it` plugins][markdown-it-plugin] to use when
-parsing input. Plugins can be used to support additional syntax and features for
-advanced scenarios. *Deprecated.*
+Provides a factory function for creating instances of the `markdown-it` parser.
 
-[markdown-it-plugin]: https://www.npmjs.com/search?q=keywords:markdown-it-plugin
+Previous versions of the `markdownlint` library declared `markdown-it` as a
+direct dependency. This function makes it possible to avoid that dependency
+entirely. In cases where `markdown-it` is needed, the caller is responsible for
+declaring the dependency and returning an instance from this factory. If any
+[`markdown-it` plugins][markdown-it-plugin] are needed, they should be `use`d by
+the caller before returning the `markdown-it` instance.
 
-Each item in the top-level `Array` should be of the form:
+For compatibility with previous versions of `markdownlint`, this function should
+be similar to:
 
 ```javascript
-[ require("markdown-it-plugin"), plugin_param_0, plugin_param_1, ... ]
+import markdownIt from "markdown-it";
+const markdownItFactory = () => markdownIt({ "html": true });
 ```
 
-> Note that `markdown-it` plugins are only called when the `markdown-it` parser
-> is invoked. None of the built-in rules use the `markdown-it` parser, so
-> `markdown-it` plugins will only be invoked when one or more
-> [custom rules][custom-rules] that use the `markdown-it` parser are present.
+When an asynchronous implementation of `lint` is being invoked (e.g., via
+`markdownlint/async` or `markdownlint/promise`), this function can return a
+`Promise` in order to defer the import of `markdown-it`:
+
+```javascript
+const markdownItFactory = () => import("markdown-it").then((module) => module.default({ "html": true }));
+```
+
+> Note that this function is only invoked when a `markdown-it` parser is
+> needed. None of the built-in rules use the `markdown-it` parser, so it is only
+> invoked when one or more [custom rules][custom-rules] are present that use the
+> `markdown-it` parser.
 
 [custom-rules]: #custom-rules
+[markdown-it]: https://github.com/markdown-it/markdown-it
+[markdown-it-plugin]: https://www.npmjs.com/search?q=keywords:markdown-it-plugin
 
 ##### options.noInlineConfig
 
@@ -660,9 +678,9 @@ uses rule aliases (ex: `no-hard-tabs`) instead of names (ex: `MD010`).
 ### Config
 
 The `options.config` configuration object is simple and can be stored in a file
-for readability and easy reuse. The `readConfig` and `readConfigSync` functions
-load configuration settings and support the `extends` keyword for referencing
-other files (see above).
+for readability and easy reuse. The `readConfig` function loads configuration
+settings and supports the `extends` keyword for referencing files or packages
+(see above).
 
 By default, configuration files are parsed as JSON (and named
 `.markdownlint.json`). Custom parsers can be provided to handle other formats

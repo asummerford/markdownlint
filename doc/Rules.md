@@ -943,6 +943,10 @@ Tags: `blockquote`, `indentation`, `whitespace`
 
 Aliases: `no-multiple-space-blockquote`
 
+Parameters:
+
+- `list_items`: Include list items (`boolean`, default `true`)
+
 Fixable: Some violations can be fixed by tooling
 
 This rule is triggered when blockquotes have more than one space after the
@@ -959,6 +963,10 @@ To fix, remove any extraneous space:
 > This is a blockquote with correct
 > indentation.
 ```
+
+Inferring intended list indentation within a blockquote can be challenging;
+setting the `list_items` parameter to `false` disables this rule for ordered
+and unordered list items.
 
 Rationale: Consistent formatting makes it easier to understand a document.
 
@@ -1528,38 +1536,50 @@ Aliases: `no-space-in-code`
 
 Fixable: Some violations can be fixed by tooling
 
-This rule is triggered for code span elements that have spaces adjacent to the
-backticks:
+This rule is triggered for code spans containing content with unnecessary space
+next to the beginning or ending backticks:
 
 ```markdown
 `some text `
 
 ` some text`
+
+`   some text   `
 ```
 
-To fix this, remove any spaces adjacent to the backticks:
+To fix this, remove the extra space characters from the beginning and ending:
 
 ```markdown
 `some text`
 ```
 
-Note: A single leading and trailing space is allowed by the specification and
-automatically trimmed (in order to allow for code spans that embed backticks):
+Note: A single leading *and* trailing space is allowed by the specification and
+trimmed by the parser to support code spans that begin or end with a backtick:
 
 ```markdown
 `` `backticks` ``
+
+`` backtick` ``
 ```
 
-Note: A single leading or trailing space is allowed if used to separate code
-span markers from an embedded backtick (though the space is not trimmed):
+Note: When single-space padding is present in the input, it will be preserved
+(even if unnecessary):
 
 ```markdown
-`` ` embedded backtick``
+` code `
 ```
 
-Rationale: Violations of this rule are usually unintentional and may lead to
-improperly-rendered content. If spaces beside backticks are intentional, this
-rule can be disabled for that line or file.
+Note: Code spans containing only spaces are allowed by the specification and are
+also preserved:
+
+```markdown
+` `
+
+`   `
+```
+
+Rationale: Violations of this rule are usually unintentional and can lead to
+improperly-rendered content.
 
 <a name="md039"></a>
 
@@ -1650,47 +1670,62 @@ Aliases: `first-line-h1`, `first-line-heading`
 
 Parameters:
 
+- `allow_preamble`: Allow content before first heading (`boolean`, default
+  `false`)
 - `front_matter_title`: RegExp for matching title in front matter (`string`,
   default `^\s*title\s*[:=]`)
 - `level`: Heading level (`integer`, default `1`)
 
 This rule is intended to ensure documents have a title and is triggered when
-the first line in the file isn't a top-level (h1) heading:
+the first line in a document is not a top-level ([HTML][HTML] `h1`) heading:
 
 ```markdown
-This is a file without a heading
+This is a document without a heading
 ```
 
-To fix this, add a top-level heading to the beginning of the file:
+To fix this, add a top-level heading to the beginning of the document:
 
 ```markdown
-# File with heading
+# Document Heading
 
-This is a file with a top-level heading
+This is a document with a top-level heading
 ```
 
 Because it is common for projects on GitHub to use an image for the heading of
-`README.md` and that is not well-supported by Markdown, HTML headings are also
-permitted by this rule. For example:
+`README.md` and that pattern is not well-supported by Markdown, HTML headings
+are also permitted by this rule. For example:
 
 ```markdown
 <h1 align="center"><img src="https://placekitten.com/300/150"/></h1>
 
-This is a file with a top-level HTML heading
+This is a document with a top-level HTML heading
 ```
 
-Note: The `level` parameter can be used to change the top-level (ex: to h2) in
-cases where an h1 is added externally.
+In some cases, a document's title heading may be preceded by text like a table
+of contents. This is not ideal for accessibility, but can be allowed by setting
+the `allow_preamble` parameter to `true`.
 
-If [YAML](https://en.wikipedia.org/wiki/YAML) front matter is present and
-contains a `title` property (commonly used with blog posts), this rule will not
-report a violation. To use a different property name in the front matter,
-specify the text of a regular expression via the `front_matter_title` parameter.
-To disable the use of front matter by this rule, specify `""` for
-`front_matter_title`.
+```markdown
+This is a document with preamble text
+
+# Document Heading
+```
+
+If [YAML][YAML] front matter is present and contains a `title` property
+(commonly used with blog posts), this rule will not report a violation. To use a
+different property name in the front matter, specify the text of a [regular
+expression][RegExp] via the `front_matter_title` parameter. To disable the use
+of front matter by this rule, specify `""` for `front_matter_title`.
+
+The `level` parameter can be used to change the top-level heading (ex: to `h2`)
+in cases where an `h1` is added externally.
 
 Rationale: The top-level heading often acts as the title of a document. More
 information: <https://cirosantilli.com/markdown-style-guide#top-level-header>.
+
+[HTML]: https://en.wikipedia.org/wiki/HTML
+[RegExp]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions
+[YAML]: https://en.wikipedia.org/wiki/YAML
 
 <a name="md042"></a>
 
@@ -1747,7 +1782,7 @@ structure for a set of files.
 To require exactly the following structure:
 
 ```markdown
-# Head
+# Heading
 ## Item
 ### Detail
 ```
@@ -1756,7 +1791,7 @@ Set the `headings` parameter to:
 
 ```json
 [
-    "# Head",
+    "# Heading",
     "## Item",
     "### Detail"
 ]
@@ -1765,7 +1800,7 @@ Set the `headings` parameter to:
 To allow optional headings as with the following structure:
 
 ```markdown
-# Head
+# Heading
 ## Item
 ### Detail (optional)
 ## Foot
@@ -1778,11 +1813,29 @@ special value `"+"` meaning "one or more unspecified headings" and set the
 
 ```json
 [
-    "# Head",
+    "# Heading",
     "## Item",
     "*",
     "## Foot",
     "*"
+]
+```
+
+To allow a single required heading to vary as with a project name:
+
+```markdown
+# Project Name
+## Description
+## Examples
+```
+
+Use the special value `"?"` meaning "exactly one unspecified heading":
+
+```json
+[
+    "?",
+    "## Description",
+    "## Examples"
 ]
 ```
 
@@ -1855,7 +1908,7 @@ Tags: `accessibility`, `images`
 
 Aliases: `no-alt-text`
 
-This rule is triggered when an image is missing alternate text (alt text)
+This rule reports a violation when an image is missing alternate text (alt text)
 information.
 
 Alternate text is commonly specified inline as:
@@ -1880,12 +1933,20 @@ Or with HTML as:
 <img src="image.jpg" alt="Alternate text" />
 ```
 
+Note: If the [HTML `aria-hidden` attribute][aria-hidden] is used to hide the
+image from assistive technology, this rule does not report a violation:
+
+```html
+<img src="image.jpg" aria-hidden="true" />
+```
+
 Guidance for writing alternate text is available from the [W3C][w3c],
 [Wikipedia][wikipedia], and [other locations][phase2technology].
 
 Rationale: Alternate text is important for accessibility and describes the
 content of an image for people who may not be able to see it.
 
+[aria-hidden]: https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-hidden
 [phase2technology]: https://www.phase2technology.com/blog/no-more-excuses
 [w3c]: https://www.w3.org/WAI/alt/
 [wikipedia]: https://en.wikipedia.org/wiki/Alt_attribute
@@ -2103,6 +2164,8 @@ Aliases: `link-fragments`
 Parameters:
 
 - `ignore_case`: Ignore case of fragments (`boolean`, default `false`)
+- `ignored_pattern`: Pattern for ignoring additional fragments (`string`,
+  default ``)
 
 Fixable: Some violations can be fixed by tooling
 
@@ -2160,6 +2223,13 @@ attribute can be used to define a fragment:
 An `a` tag can be useful in scenarios where a heading is not appropriate or for
 control over the text of the fragment identifier.
 
+[HTML links to `#top` scroll to the top of a document][html-top-fragment]. This
+rule allows that syntax (using lower-case for consistency):
+
+```markdown
+[Link](#top)
+```
+
 This rule also recognizes the custom fragment syntax used by GitHub to highlight
 [specific content in a document][github-linking-to-content].
 
@@ -2175,6 +2245,12 @@ And this link to content starting within line 19 running into line 21:
 [Link](#L19C5-L21C11)
 ```
 
+Some Markdown generators dynamically create and insert headings when building
+documents, for example by combining a fixed prefix like `figure-` and an
+incrementing numeric counter. To ignore such generated fragments, set the
+`ignored_pattern` [regular expression][RegEx] parameter to a pattern that
+matches (e.g., `^figure-`).
+
 Rationale: [GitHub section links][github-section-links] are created
 automatically for every heading when Markdown content is displayed on GitHub.
 This makes it easy to link directly to different sections within a document.
@@ -2189,6 +2265,8 @@ append an incrementing integer as needed for uniqueness.
 [github-section-links]: https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#section-links
 [github-heading-algorithm]: https://github.com/gjtorikian/html-pipeline/blob/f13a1534cb650ba17af400d1acd3a22c28004c09/lib/html/pipeline/toc_filter.rb
 [github-linking-to-content]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-a-permanent-link-to-a-code-snippet#linking-to-markdown#linking-to-markdown
+[html-top-fragment]: https://html.spec.whatwg.org/multipage/browsing-the-web.html#scrolling-to-a-fragment
+[RegEx]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions
 
 <a name="md052"></a>
 
@@ -2200,6 +2278,7 @@ Aliases: `reference-links-images`
 
 Parameters:
 
+- `ignored_labels`: Ignored link labels (`string[]`, default `["x"]`)
 - `shortcut_syntax`: Include shortcut syntax (`boolean`, default `false`)
 
 Links and images in Markdown can provide the link destination or image source
@@ -2232,6 +2311,17 @@ so "shortcut" syntax is ignored by default. To include "shortcut" syntax, set
 the `include_shortcut` parameter to `true`. Note that doing so produces warnings
 for *all* text in the document that *could* be a shortcut. If bracketed text is
 intentional, brackets can be escaped with the `\` character: `\[example\]`.
+
+If there are link labels that are deliberately unreferenced, they can be ignored
+by setting the `ignored_labels` parameter to the list of strings to ignore. The
+default value of this parameter ignores the checkbox syntax used by
+[GitHub Flavored Markdown task list items][gfm-tasklist]:
+
+```markdown
+- [x] Checked task list item
+```
+
+[gfm-tasklist]: https://github.github.com/gfm/#task-list-items-extension-
 
 <a name="md053"></a>
 
@@ -2266,9 +2356,9 @@ reference has the corresponding label. The "full", "collapsed", and "shortcut"
 formats are all supported.
 
 If there are reference definitions that are deliberately unreferenced, they can
-be ignored by setting the `ignored_definitions` parameter. The default value of
-this parameter ignores the following convention for adding non-HTML comments to
-Markdown:
+be ignored by setting the `ignored_definitions` parameter to the list of strings
+to ignore. The default value of this parameter ignores the following convention
+for adding non-HTML comments to Markdown:
 
 ```markdown
 [//]: # (This behaves like a comment)
@@ -2525,6 +2615,39 @@ Some text
 
 Rationale: In addition to aesthetic reasons, some parsers will incorrectly parse
 tables that don't have blank lines before and after them.
+
+<a name="md059"></a>
+
+## `MD059` - Link text should be descriptive
+
+Tags: `accessibility`, `links`
+
+Aliases: `descriptive-link-text`
+
+Parameters:
+
+- `prohibited_texts`: Prohibited link texts (`string[]`, default `["click
+  here","here","link","more"]`)
+
+This rule is triggered when a link has generic text like `[click here](...)` or
+`[link](...)`.
+
+Link text should be descriptive and communicate the purpose of the link (e.g.,
+`[Download the budget document](...)` or `[CommonMark Specification](...)`).
+This is especially important for screen readers which sometimes present links
+without context.
+
+By default, this rule prohibits a small number of common English words/phrases.
+To customize that list of words/phrases, set the `prohibited_texts` parameter to
+an `Array` of `string`s.
+
+Note: For languages other than English, use the `prohibited_texts` parameter to
+customize the list for that language. It is *not* a goal for this rule to have
+translations for every language.
+
+Note: This rule checks Markdown links; HTML links are ignored.
+
+More information: <https://webaim.org/techniques/hypertext/>
 
 <!-- markdownlint-configure-file {
   "no-inline-html": {

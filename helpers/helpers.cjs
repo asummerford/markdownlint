@@ -9,11 +9,8 @@ const { newLineRe, nextLinesRe } = require("./shared.cjs");
 module.exports.newLineRe = newLineRe;
 module.exports.nextLinesRe = nextLinesRe;
 
-// @ts-expect-error https://github.com/microsoft/TypeScript/issues/52529
 /** @typedef {import("../lib/exports.mjs").RuleOnError} RuleOnError */
-// @ts-expect-error https://github.com/microsoft/TypeScript/issues/52529
 /** @typedef {import("../lib/exports.mjs").RuleOnErrorFixInfo} RuleOnErrorFixInfo */
-// @ts-expect-error https://github.com/microsoft/TypeScript/issues/52529
 /** @typedef {import("../lib/exports.mjs").MicromarkToken} MicromarkToken */
 // eslint-disable-next-line jsdoc/valid-types
 /** @typedef {import("micromark-extension-gfm-footnote", { with: { "resolution-mode": "import" } })} */
@@ -311,9 +308,9 @@ module.exports.addErrorDetailIf = addErrorDetailIf;
  * @param {RuleOnErrorFixInfo} [fixInfo] RuleOnErrorFixInfo instance.
  * @returns {void}
  */
-function addErrorContext(
-  onError, lineNumber, context, start, end, range, fixInfo) {
-  context = ellipsify(context, start, end);
+function addErrorContext(onError, lineNumber, context, start, end, range, fixInfo) {
+  // Normalize new line characters so Linux and Windows trim consistently
+  context = ellipsify(context.replace(newLineRe, "\n"), start, end);
   addError(onError, lineNumber, undefined, context, range, fixInfo);
 }
 module.exports.addErrorContext = addErrorContext;
@@ -378,6 +375,7 @@ module.exports.frontMatterHasTitle =
  */
 function getReferenceLinkImageData(tokens) {
   const normalizeReference = (s) => s.toLowerCase().trim().replace(/\s+/g, " ");
+  const getText = (t) => t?.children.filter((c) => c.type !== "blockQuotePrefix").map((c) => c.text).join("");
   const references = new Map();
   const shortcuts = new Map();
   const addReferenceToDictionary = (token, label, isShortcut) => {
@@ -449,7 +447,7 @@ function getReferenceLinkImageData(tokens) {
           const isFullOrCollapsed = (token.children.length === 2) && !token.children.some((t) => t.type === "resource");
           const [ labelText ] = micromark.getDescendantsByType(token, [ "label", "labelText" ]);
           const [ referenceString ] = micromark.getDescendantsByType(token, [ "reference", "referenceString" ]);
-          let label = labelText?.text;
+          let label = getText(labelText);
           // Identify if footnote
           if (!isShortcut && !isFullOrCollapsed) {
             const [ footnoteCallMarker, footnoteCallString ] = token.children.filter(
@@ -462,7 +460,7 @@ function getReferenceLinkImageData(tokens) {
           }
           // Track link (handle shortcuts separately due to ambiguity in "text [text] text")
           if (isShortcut || isFullOrCollapsed) {
-            addReferenceToDictionary(token, referenceString?.text || label, isShortcut);
+            addReferenceToDictionary(token, getText(referenceString) || label, isShortcut);
           }
         }
         break;

@@ -50,9 +50,10 @@ const tags = {};
 
 // Add rules
 for (const rule of rules) {
+  const ruleName = rule.names[0];
   for (const tag of rule.tags) {
     const tagRules = tags[tag] || [];
-    tagRules.push(rule.names[0]);
+    tagRules.push(ruleName);
     tags[tag] = tagRules;
   }
   const scheme = {
@@ -62,7 +63,7 @@ for (const rule of rules) {
     "default": true
   };
   let custom = true;
-  switch (rule.names[0]) {
+  switch (ruleName) {
     case "MD003":
       scheme.properties = {
         "style": {
@@ -256,20 +257,21 @@ for (const rule of rules) {
       };
       break;
     case "MD026":
-      scheme.properties = {
-        "punctuation": {
-          "description": "Punctuation characters",
-          "type": "string",
-          "default": ".,;:!。，；：！"
-        }
-      };
-      break;
     case "MD036":
       scheme.properties = {
         "punctuation": {
           "description": "Punctuation characters",
           "type": "string",
-          "default": ".,;:!?。，；：！？"
+          "default": (ruleName === "MD026") ? ".,;:!。，；：！" : ".,;:!?。，；：！？"
+        }
+      };
+      break;
+    case "MD027":
+      scheme.properties = {
+        "list_items": {
+          "description": "Include list items",
+          "type": "boolean",
+          "default": true
         }
       };
       break;
@@ -365,20 +367,32 @@ for (const rule of rules) {
       break;
     case "MD025":
     case "MD041":
-      scheme.properties = {
-        "level": {
-          "description": "Heading level",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 6,
-          "default": 1
-        },
-        "front_matter_title": {
-          "description": "RegExp for matching title in front matter",
-          "type": "string",
-          "default": "^\\s*title\\s*[:=]"
-        }
-      };
+      {
+        const md041Properties = (ruleName === "MD041") ?
+          {
+            "allow_preamble": {
+              "description": "Allow content before first heading",
+              "type": "boolean",
+              "default": false
+            }
+          } :
+          {};
+        scheme.properties = {
+          ...md041Properties,
+          "front_matter_title": {
+            "description": "RegExp for matching title in front matter",
+            "type": "string",
+            "default": "^\\s*title\\s*[:=]"
+          },
+          "level": {
+            "description": "Heading level",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6,
+            "default": 1
+          }
+        };
+      }
       break;
     case "MD043":
       scheme.properties = {
@@ -387,7 +401,7 @@ for (const rule of rules) {
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*|\\+|#{1,6} .*)$"
+            "pattern": "^(\\*|\\+|\\?|#{1,6}\\s+\\S.*)$"
           },
           "default": []
         },
@@ -449,23 +463,10 @@ for (const rule of rules) {
       };
       break;
     case "MD049":
-      scheme.properties = {
-        "style": {
-          "description": "Emphasis style",
-          "type": "string",
-          "enum": [
-            "consistent",
-            "asterisk",
-            "underscore"
-          ],
-          "default": "consistent"
-        }
-      };
-      break;
     case "MD050":
       scheme.properties = {
         "style": {
-          "description": "Strong style",
+          "description": (ruleName === "MD049") ? "Emphasis style" : "Strong style",
           "type": "string",
           "enum": [
             "consistent",
@@ -482,11 +483,24 @@ for (const rule of rules) {
           "description": "Ignore case of fragments",
           "type": "boolean",
           "default": false
+        },
+        "ignored_pattern": {
+          "description": "Pattern for ignoring additional fragments",
+          "type": "string",
+          "default": ""
         }
       };
       break;
     case "MD052":
       scheme.properties = {
+        "ignored_labels": {
+          "description": "Ignored link labels",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [ "x" ]
+        },
         "shortcut_syntax": {
           "description": "Include shortcut syntax",
           "type": "boolean",
@@ -556,6 +570,23 @@ for (const rule of rules) {
         }
       };
       break;
+    case "MD059":
+      scheme.properties = {
+        "prohibited_texts": {
+          "description": "Prohibited link texts",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "click here",
+            "here",
+            "link",
+            "more"
+          ]
+        }
+      };
+      break;
     default:
       custom = false;
       break;
@@ -569,7 +600,7 @@ for (const rule of rules) {
     schema.properties[name] = scheme;
     // Using $ref causes rule aliases not to get JSDoc comments
     // schema.properties[name] = (index === 0) ? scheme : {
-    //   "$ref": `#/properties/${rule.names[0]}`
+    //   "$ref": `#/properties/${firstName}`
     // };
   }
 }

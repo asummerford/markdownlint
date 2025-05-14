@@ -83,6 +83,23 @@ export function applyFixes(input: string, errors: RuleOnErrorInfo[]): string;
  */
 export function getVersion(): string;
 /**
+ * Result object for getEnabledRulesPerLineNumber.
+ */
+export type EnabledRulesPerLineNumberResult = {
+    /**
+     * Effective configuration.
+     */
+    effectiveConfig: Configuration;
+    /**
+     * Enabled rules per line number.
+     */
+    enabledRulesPerLineNumber: any[];
+    /**
+     * Enabled rule list.
+     */
+    enabledRuleList: Rule[];
+};
+/**
  * Function to implement rule logic.
  */
 export type RuleFunction = (params: RuleParams, onError: RuleOnError) => void;
@@ -358,6 +375,23 @@ export type Rule = {
     function: RuleFunction;
 };
 /**
+ * Method used by the markdown-it parser to parse input.
+ */
+export type MarkdownItParse = (src: string, env: any) => any[];
+/**
+ * Instance of the markdown-it parser.
+ */
+export type MarkdownIt = {
+    /**
+     * Method to parse input.
+     */
+    parse: MarkdownItParse;
+};
+/**
+ * Gets an instance of the markdown-it parser. Any plugins should already have been loaded.
+ */
+export type MarkdownItFactory = () => MarkdownIt | Promise<MarkdownIt>;
+/**
  * Configuration options.
  */
 export type Options = {
@@ -390,9 +424,9 @@ export type Options = {
      */
     handleRuleFailures?: boolean;
     /**
-     * Additional plugins.
+     * Function to create a markdown-it parser.
      */
-    markdownItPlugins?: Plugin[];
+    markdownItFactory?: MarkdownItFactory;
     /**
      * True to ignore HTML directives.
      */

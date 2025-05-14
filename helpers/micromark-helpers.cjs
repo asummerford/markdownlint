@@ -2,12 +2,13 @@
 
 "use strict";
 
-const { flatTokensSymbol, htmlFlowSymbol } = require("./shared.cjs");
+const { flatTokensSymbol, htmlFlowSymbol, newLineRe } = require("./shared.cjs");
 
 // eslint-disable-next-line jsdoc/valid-types
 /** @typedef {import("micromark-util-types", { with: { "resolution-mode": "import" } }).TokenType} TokenType */
-// @ts-expect-error https://github.com/microsoft/TypeScript/issues/52529
 /** @typedef {import("../lib/exports.mjs").MicromarkToken} Token */
+// eslint-disable-next-line jsdoc/valid-types
+/** @typedef {import("../lib/micromark-types.d.mts", { with: { "resolution-mode": "import" } })} */
 
 /**
  * Determines if a Micromark token is within an htmlFlow type.
@@ -215,8 +216,11 @@ function getHeadingStyle(heading) {
  * @returns {string} Heading text.
  */
 function getHeadingText(heading) {
-  const headingTexts = getDescendantsByType(heading, [ [ "atxHeadingText", "setextHeadingText" ] ]);
-  return headingTexts[0]?.text.replace(/[\r\n]+/g, " ") || "";
+  return getDescendantsByType(heading, [ [ "atxHeadingText", "setextHeadingText" ] ])
+    .flatMap((descendant) => descendant.children.filter((child) => child.type !== "htmlText"))
+    .map((data) => data.text)
+    .join("")
+    .replace(newLineRe, " ");
 }
 
 /**
@@ -265,6 +269,26 @@ function getParentOfType(token, types) {
   return current;
 }
 
+const docfxTabSyntaxRe = /^#tab\//;
+
+/**
+ * Returns whether the specified Micromark token looks like a Docfx tab.
+ *
+ * @param {Token | null} heading Micromark token.
+ * @returns {boolean} True iff the token looks like a Docfx tab.
+ */
+function isDocfxTab(heading) {
+  // See https://dotnet.github.io/docfx/docs/markdown.html?tabs=linux%2Cdotnet#tabs
+  if (heading?.type === "atxHeading") {
+    const headingTexts = getDescendantsByType(heading, [ "atxHeadingText" ]);
+    if ((headingTexts.length === 1) && (headingTexts[0].children.length === 1) && (headingTexts[0].children[0].type === "link")) {
+      const resourceDestinationStrings = filterByTypes(headingTexts[0].children[0].children, [ "resourceDestinationString" ]);
+      return (resourceDestinationStrings.length === 1) && docfxTabSyntaxRe.test(resourceDestinationStrings[0].text);
+    }
+  }
+  return false;
+}
+
 /**
  * Set containing token types that do not contain content.
  *
@@ -296,6 +320,7 @@ module.exports = {
   getHtmlTagInfo,
   getParentOfType,
   inHtmlFlow,
+  isDocfxTab,
   isHtmlFlowComment,
   nonContentTokens
 };
